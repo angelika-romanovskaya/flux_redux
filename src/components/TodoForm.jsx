@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { dispatcher } from "../flux/dispatcher";
 import { addTodo } from "../flux/actions";
+import { useDispatch } from "react-redux";
 
 export default function TodoForm() {
 	const [text, setText] = useState("");
+	const dispatch = useDispatch();
 
 	const handleSubmit = (e) => {
 		e.preventDefault();
-		dispatcher.dispatch(addTodo(text));
+		dispatch(addTodo(text));
 		setText("");
 	};
 

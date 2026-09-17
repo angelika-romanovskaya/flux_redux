@@ -76,3 +76,12 @@ h1 {
 	color: #999;
 	font-style: italic;
 }
+.filters {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+.filters button.active {
+	font-weight: bold;
+	background: #ddd;
+}

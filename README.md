@@ -1,78 +1,213 @@
-Flux без Redux. Своими руками.
+# Redux в проекте
 
-## Зачем
-
-По заданию надо было показать классический Flux-паттерн без готовых решений типа Redux, Redux Toolkit или Zustand. Взял Todo, потому что на нем удобно показать сразу несколько типов экшенов.
-
-## Схема Flux-потока
-
-```
-   [ View ]  (клик, submit, что угодно)
-       |
-       |  dispatch(action)
-       v
- [ Dispatcher ]  — один на всё приложение, просто раздает экшены
-       |
-       |  action
-       v
- [ Store ]  — тут живёт state, тут он и меняется
-       |
-       |  emitChange()
-       v
- [ Listeners ]  — компоненты, подписанные на стор
-       |
-       v
-   [ View ]  перерисовывается с новым состоянием
-```
-
-Всё строго в одну сторону. Никаких обратных связей, никаких «компонент поменял стор и стор поменял компонент». Если что-то изменилось — значит, кто-то кинул экшен, и это изменение можно найти в редьюсере.
-
-## Роли
-
-**Action.** Это просто объект вида `{ type, payload }`. Например `{ type: "ADD_TODO", payload: { text: "купить хлеб" } }`. Экшен ничего не делает сам — он только описывает, что произошло, словами. Рядом с типами лежат функции-фабрики (`addTodo`, `toggleTodo`, `removeTodo`, `reset`), чтобы не собирать эти объекты руками в каждом компоненте.
-
-**Dispatcher.** Принимает экшен и раздает его всем, кто подписан. Никакой логики, никаких решений — просто вешалка, на которую стор вешает свой обработчик, а компоненты кидают экшены. Внутри Set колбэков и метод `dispatch(action)`. Если у экшена нет `type` — падаем с ошибкой, молча проглатывать такое не хочется.
-
-**Store.** Хранит состояние и меняет его в ответ на экшены. Это фабрика `createStore()`: внутри замыкания живут `state`, `listeners` и счётчик id. Экшены обрабатывает чистая функция `reduce(state, action, ctx)`, возвращает либо новое состояние, либо `null` (если экшен незнакомый или данные пустые). После апдейта дергает `emitChange()`, чтобы подписчики узнали, что пора перерисоваться. Стор же предоставляет `getState()` и `subscribe()` — больше наружу ничего не торчит.
-
-**View.** Компоненты. Читают состояние через хук `useTodoStore()`. Менять состояние могут только одним способом — `dispatcher.dispatch(...)`. Никаких `store.state = ...`, никаких `setState` на сторе, ничего такого. Стор для них — чёрный ящик с двумя методами.
-
-## Чем это отличается от useState
-
-С `useState` состояние живёт внутри конкретного компонента. Достать его оттуда можно только прокинув вниз пропсом или через контекст. И поменять его может любой код, у которого есть сеттер — хоть обработчик клика, хоть `useEffect`, хоть что-то ещё, вызванное в непонятный момент.
-
-В Flux состояние живёт отдельно от UI. У него одна точка входа — экшен. Один выход — подписка. Всё, что происходит с данными, можно перечислить: это ровно те `case`, что лежат в `reduce`. Плюс когда состояний становится больше одного и они нужны сразу в нескольких компонентах, не надо таскать пропсы через пять уровней — все просто подписаны на один стор.
-
-Минус тоже очевиден: на задаче размером с этот todo без Flux было бы кода раза в три меньше. `useState` для локального счётчика — это нормально, а вот когда счетчик нужен ещё и в сайдбаре, и в хедере, и в модалке — тут `useState` начинает превращаться в проброс пропсов через полпроекта, и тогда уже хочется что-то вроде стора.
-
-Коротко: `useState` — это память одного компонента, Flux — это память приложения с явным списком того, что с ней можно сделать.
-
-## Структура
+## Схема файлов
 
 ```
 src/
-  flux/
-    actions.js
-    dispatcher.js
-    store.js
-    useStore.js
-  components/
-    TodoForm.jsx
-    TodoList.jsx
-    TodoStats.jsx
-  App.js
-  index.js
+├── redux/
+│   ├── actions.js       // action creators — функции, создающие actions
+│   ├── reducer.js       // редьюсер — чистая функция (state, action) => newState
+│   └── store.js         // создание стора через legacy_createStore
+├── components/
+│   ├── TodoList.jsx     // читает todos, диспатчит toggle/remove
+│   └── TodoForm.jsx      // диспатчит addTodo
+├── App.jsx              // собирает всё вместе
+└── index.jsx            // оборачивает <App /> в <Provider store={store}>
 ```
 
-## Запуск
+Поток данных:
 
 ```
-npm install
-npm start
+компонент → dispatch(action) → reducer → новый state → useSelector → компонент
 ```
 
-Порт 3000.
+## Пример action
 
-## Состояние на странице
+Action — обычный объект с обязательным полем `type` и (обычно) `payload`. Action creator — функция, которая его возвращает.
 
-Внизу рендерится `<pre>` с `JSON.stringify(state, null, 2)` — видно, что стор меняется.
+**`redux/actionTypes.js`**
+```js
+export const ActionTypes = {
+  ADD_TODO: "ADD_TODO",
+  TOGGLE_TODO: "TOGGLE_TODO",
+  REMOVE_TODO: "REMOVE_TODO",
+  RESET: "RESET",
+};
+```
+
+**`redux/actions.js`**
+```js
+import { ActionTypes } from "./actionTypes";
+
+export const addTodo = (text) => ({
+  type: ActionTypes.ADD_TODO,
+  payload: { text },
+});
+
+export const toggleTodo = (id) => ({
+  type: ActionTypes.TOGGLE_TODO,
+  payload: { id },
+});
+
+export const removeTodo = (id) => ({
+  type: ActionTypes.REMOVE_TODO,
+  payload: { id },
+});
+
+export const reset = () => ({
+  type: ActionTypes.RESET,
+});
+```
+
+Сам action по стандарту выглядит так:
+
+```js
+{ type: "ADD_TODO", payload: { text: "Изучить Redux" } }
+```
+
+## Пример reducer
+
+Редьюсер — **чистая функция**, которая берёт текущий стейт и action и возвращает новый стейт. Не мутирует данные, не делает запросов, не пишет в `localStorage`.
+
+**`redux/reducer.js`**
+```js
+import { v4 } from "uuid";
+import { ActionTypes } from "./actionTypes";
+
+const initialState = {
+  todos: [
+    { id: 1, text: "Изучить Flux", done: false },
+    { id: 2, text: "Сделать ДЗ 22", done: false },
+  ],
+};
+
+export const todoReducer = (state = initialState, action) => {
+  switch (action.type) {
+    case ActionTypes.ADD_TODO: {
+      const text = action.payload.text.trim();
+      if (!text) return state; // ← никогда не возвращаем null!
+      return {
+        ...state,
+        todos: [...state.todos, { id: v4(), text, done: false }],
+      };
+    }
+
+    case ActionTypes.TOGGLE_TODO:
+      return {
+        ...state,
+        todos: state.todos.map((t) =>
+          t.id === action.payload.id ? { ...t, done: !t.done } : t,
+        ),
+      };
+
+    case ActionTypes.REMOVE_TODO:
+      return {
+        ...state,
+        todos: state.todos.filter((t) => t.id !== action.payload.id),
+      };
+
+    case ActionTypes.RESET:
+      return { ...state, todos: [] };
+
+    default:
+      return state;
+  }
+};
+```
+
+**Правила редьюсера:**
+- Всегда возвращать **объект стейта**, а не `null` / `undefined`.
+- Не мутировать `state`, а копировать через `...state` и создавать новые массивы/объекты.
+- Если action незнакомый — вернуть `state` без изменений (ветка `default`).
+
+**`redux/store.js`**
+```js
+import { legacy_createStore } from "redux";
+import { todoReducer } from "./reducer";
+
+export const store = legacy_createStore(todoReducer);
+```
+
+`legacy_createStore` — то же самое, что `createStore`, но без предупреждения об устаревании. Это «старый» API Redux. В продакшене обычно берут `configureStore` из `@reduxjs/toolkit`.
+
+## Provider, useSelector, useDispatch
+
+### `<Provider store={store}>`
+
+Компонент-обёртка, который «пробрасывает» Redux-стор внутрь дерева React через контекст. Без него `useSelector` и `useDispatch` не найдут стор и упадут.
+
+**`index.jsx`**
+```jsx
+import { Provider } from "react-redux";
+import { store } from "./redux/store";
+import App from "./App";
+
+root.render(
+  <Provider store={store}>
+    <App />
+  </Provider>,
+);
+```
+
+Правило: `Provider` ставится **один раз**, как можно выше в дереве — обычно прямо в точке входа.
+
+### `useSelector`
+
+Хук, который **читает** данные из стора. Принимает селектор — функцию `state => нужный кусок`. Когда этот кусок меняется, компонент перерисовывается.
+
+```jsx
+import { useSelector } from "react-redux";
+
+const { todos } = useSelector((store) => store);
+// или только одно поле:
+const todos = useSelector((store) => store.todos);
+```
+
+**Важно:** селектор должен возвращать **стабильное значение**. Если он каждый раз создаёт новый объект — компонент будет перерисовываться на каждое изменение стора. Поэтому либо возвращай примитив, либо готовый кусок стейта.
+
+### `useDispatch`
+
+Хук, который даёт доступ к функции `dispatch`. Через неё компонент отправляет actions в стор — редьюсер их обработает и обновит состояние.
+
+```jsx
+import { useDispatch } from "react-redux";
+import { toggleTodo } from "../redux/actions";
+
+const dispatch = useDispatch();
+
+<button onClick={() => dispatch(toggleTodo(todo.id))}>…</button>
+```
+
+`dispatch(addTodo("Новая задача"))` создаёт action `{ type: "ADD_TODO", payload: { text: "Новая задача" } }`, редьюсер его ловит и добавляет в `state.todos`.
+
+## Мини-пример целиком
+
+```jsx
+import { useDispatch, useSelector } from "react-redux";
+import { addTodo, toggleTodo } from "./redux/actions";
+
+export default function App() {
+  const { todos } = useSelector((state) => state);
+  const dispatch = useDispatch();
+
+  return (
+    <div>
+      <button onClick={() => dispatch(addTodo("Новая задача"))}>
+        Добавить
+      </button>
+
+      <ul>
+        {todos.map((t) => (
+          <li
+            key={t.id}
+            onClick={() => dispatch(toggleTodo(t.id))}
+            style={{ textDecoration: t.done ? "line-through" : "none" }}
+          >
+            {t.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
