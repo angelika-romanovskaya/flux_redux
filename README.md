@@ -1,213 +1,201 @@
-# Redux в проекте
+# Redux + redux-thunk + loggerMiddleware
 
-## Схема файлов
+Учебный проект на React + Redux. Внутри два независимых приложения на одном сторе, переключаются табами:
+
+- **Задачи** (todo)
+- **Posts** — асинхронная загрузка с публичного API (jsonplaceholder).
+
+## Запуск
+
+```bash
+npm install
+npm start
+```
+
+## Стек
+
+- `react` + `react-dom`
+- `redux` (legacy API: `legacy_createStore`, `combineReducers`, `applyMiddleware`)
+- `react-redux` (`Provider`, `useSelector`, `useDispatch`)
+- `redux-thunk` — для async actions
+- `uuid` — генерация id задач
+
+## Структура проекта
 
 ```
 src/
 ├── redux/
-│   ├── actions.js       // action creators — функции, создающие actions
-│   ├── reducer.js       // редьюсер — чистая функция (state, action) => newState
-│   └── store.js         // создание стора через legacy_createStore
+│   ├── todo/
+│   │   ├── actions.js
+│   │   └── reducer.js
+│   ├── posts/
+│   │   ├── actions.js
+│   │   └── reducer.js
+│   ├── middlewares/
+│   │   └── loggerMiddleware.js
+│   └── store.js           // combineReducers + applyMiddleware(thunk, logger)
 ├── components/
-│   ├── TodoList.jsx     // читает todos, диспатчит toggle/remove
-│   └── TodoForm.jsx      // диспатчит addTodo
-├── App.jsx              // собирает всё вместе
-└── index.jsx            // оборачивает <App /> в <Provider store={store}>
+│   ├── TodoApp.jsx        // приложение «Задачи»
+│   ├── PostsApp.jsx       // приложение «Posts»
+│   ├── TodoForm.jsx
+│   ├── TodoList.jsx
+│   ├── TodoStats.jsx
+│   └── ...
+├── App.jsx                // табы + рендер активного приложения
+├── index.jsx              // <Provider store={store}><App /></Provider>
+└── App.css
 ```
 
-Поток данных:
+## Схема стора
 
-```
-компонент → dispatch(action) → reducer → новый state → useSelector → компонент
-```
-
-## Пример action
-
-Action — обычный объект с обязательным полем `type` и (обычно) `payload`. Action creator — функция, которая его возвращает.
-
-**`redux/actionTypes.js`**
-```js
-export const ActionTypes = {
-  ADD_TODO: "ADD_TODO",
-  TOGGLE_TODO: "TOGGLE_TODO",
-  REMOVE_TODO: "REMOVE_TODO",
-  RESET: "RESET",
-};
-```
-
-**`redux/actions.js`**
-```js
-import { ActionTypes } from "./actionTypes";
-
-export const addTodo = (text) => ({
-  type: ActionTypes.ADD_TODO,
-  payload: { text },
-});
-
-export const toggleTodo = (id) => ({
-  type: ActionTypes.TOGGLE_TODO,
-  payload: { id },
-});
-
-export const removeTodo = (id) => ({
-  type: ActionTypes.REMOVE_TODO,
-  payload: { id },
-});
-
-export const reset = () => ({
-  type: ActionTypes.RESET,
-});
-```
-
-Сам action по стандарту выглядит так:
+Стор собран из двух независимых срезов через `combineReducers`:
 
 ```js
-{ type: "ADD_TODO", payload: { text: "Изучить Redux" } }
+{
+  todo:  { todos: [...] },                    // синхронный срез
+  posts: { posts: [], loading, error }        // асинхронный срез
+}
 ```
 
-## Пример reducer
+Оба приложения живут одновременно, переключаются табами. Данные не теряются при переходе между вкладками, потому что оба среза всегда в сторе.
 
-Редьюсер — **чистая функция**, которая берёт текущий стейт и action и возвращает новый стейт. Не мутирует данные, не делает запросов, не пишет в `localStorage`.
+## Store
 
-**`redux/reducer.js`**
+**`redux/store.js`**
 ```js
-import { v4 } from "uuid";
-import { ActionTypes } from "./actionTypes";
+import { applyMiddleware, combineReducers, legacy_createStore } from "redux";
+import { thunk } from "redux-thunk";
+import { todoReducer } from "./todo/reducer";
+import { postsReducer } from "./posts/reducer";
+import { loggerMiddleware } from "./middlewares/loggerMiddleware";
 
-const initialState = {
-  todos: [
-    { id: 1, text: "Изучить Flux", done: false },
-    { id: 2, text: "Сделать ДЗ 22", done: false },
-  ],
-};
+const rootReducer = combineReducers({
+  todo: todoReducer,
+  posts: postsReducer,
+});
 
-export const todoReducer = (state = initialState, action) => {
-  switch (action.type) {
-    case ActionTypes.ADD_TODO: {
-      const text = action.payload.text.trim();
-      if (!text) return state; // ← никогда не возвращаем null!
-      return {
-        ...state,
-        todos: [...state.todos, { id: v4(), text, done: false }],
-      };
-    }
+export const store = legacy_createStore(
+  rootReducer,
+  applyMiddleware(thunk, loggerMiddleware),
+);
+```
 
-    case ActionTypes.TOGGLE_TODO:
-      return {
-        ...state,
-        todos: state.todos.map((t) =>
-          t.id === action.payload.id ? { ...t, done: !t.done } : t,
-        ),
-      };
+Порядок `applyMiddleware(thunk, loggerMiddleware)` важен:
+- `thunk` идёт **первым** — он должен перехватить функции до того, как логгер попытается прочитать `action.type`. У функции нет `.type`, и логгер вывел бы `undefined`.
+- `applyMiddleware(...)` передаётся **вторым аргументом** `legacy_createStore` (первый — редьюсер). Частая ошибка — положить его вторым аргументом в `combineReducers`, и тогда `dispatch` остаётся «сырым», thunk не работает, а `dispatch(fetchPosts())` падает с `Actions must be plain objects`.
 
-    case ActionTypes.REMOVE_TODO:
-      return {
-        ...state,
-        todos: state.todos.filter((t) => t.id !== action.payload.id),
-      };
+## Async action (redux-thunk)
 
-    case ActionTypes.RESET:
-      return { ...state, todos: [] };
+Обычный Redux умеет диспатчить только объекты. `redux-thunk` расширяет `dispatch`: если передать **функцию**, thunk-middleware её вызовет, передав `dispatch` и `getState`.
 
-    default:
-      return state;
+**`redux/posts/actions.js`**
+```js
+export const fetchPosts = () => async (dispatch) => {
+  dispatch(fetchPostsRequest());
+  try {
+    const res = await fetch("https://jsonplaceholder.typicode.com/posts?_limit=10");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    dispatch(fetchPostsSuccess(data));
+  } catch (e) {
+    dispatch(fetchPostsFailure(e.message));
   }
 };
 ```
 
-**Правила редьюсера:**
-- Всегда возвращать **объект стейта**, а не `null` / `undefined`.
-- Не мутировать `state`, а копировать через `...state` и создавать новые массивы/объекты.
-- Если action незнакомый — вернуть `state` без изменений (ветка `default`).
-
-**`redux/store.js`**
+В компоненте:
 ```js
-import { legacy_createStore } from "redux";
-import { todoReducer } from "./reducer";
-
-export const store = legacy_createStore(todoReducer);
+const dispatch = useDispatch();
+dispatch(fetchPosts());
 ```
 
-`legacy_createStore` — то же самое, что `createStore`, но без предупреждения об устаревании. Это «старый» API Redux. В продакшене обычно берут `configureStore` из `@reduxjs/toolkit`.
+Три состояния запроса (`REQUEST` / `SUCCESS` / `FAILURE`) реализованы через разные `action.type`, а reducer переключает `loading` и `error`:
+
+```js
+{ posts: [], loading: true,  error: null }   // REQUEST
+{ posts: [...], loading: false, error: null } // SUCCESS
+{ posts: [], loading: false, error: "..." }   // FAILURE
+```
+
+## Свой middleware — loggerMiddleware
+
+**`redux/middlewares/loggerMiddleware.js`**
+```js
+export const loggerMiddleware = (store) => (next) => (action) => {
+  console.group(`action: ${action.type}`);
+  console.log("prev state", store.getState());
+
+  const result = next(action);
+
+  console.log("next state", store.getState());
+  console.groupEnd();
+
+  return result;
+};
+```
+
+Что важно:
+- `next(action)` вызывается **до** второго `getState()` — только так увидим обновлённый стейт.
+- Результат `next(action)` нужно **вернуть** — иначе сломается цепочка middleware.
+- В консоли для каждого действия видно: `type` → состояние до → состояние после.
 
 ## Provider, useSelector, useDispatch
 
-### `<Provider store={store}>`
+- **`<Provider store={store}>`** — оборачивает `<App />` в `index.jsx`, один раз, в точке входа. Через React-контекст даёт доступ к стору.
+- **`useSelector(selector)`** — читает данные из стора. Возвращает только тот кусок, который вернул селектор. Компонент перерисовывается при изменении этого куска.
+- **`useDispatch()`** — возвращает функцию `dispatch`. Через неё компоненты отправляют actions в стор.
 
-Компонент-обёртка, который «пробрасывает» Redux-стор внутрь дерева React через контекст. Без него `useSelector` и `useDispatch` не найдут стор и упадут.
-
-**`index.jsx`**
+Пример:
 ```jsx
-import { Provider } from "react-redux";
-import { store } from "./redux/store";
-import App from "./App";
-
-root.render(
-  <Provider store={store}>
-    <App />
-  </Provider>,
-);
-```
-
-Правило: `Provider` ставится **один раз**, как можно выше в дереве — обычно прямо в точке входа.
-
-### `useSelector`
-
-Хук, который **читает** данные из стора. Принимает селектор — функцию `state => нужный кусок`. Когда этот кусок меняется, компонент перерисовывается.
-
-```jsx
-import { useSelector } from "react-redux";
-
-const { todos } = useSelector((store) => store);
-// или только одно поле:
-const todos = useSelector((store) => store.todos);
-```
-
-**Важно:** селектор должен возвращать **стабильное значение**. Если он каждый раз создаёт новый объект — компонент будет перерисовываться на каждое изменение стора. Поэтому либо возвращай примитив, либо готовый кусок стейта.
-
-### `useDispatch`
-
-Хук, который даёт доступ к функции `dispatch`. Через неё компонент отправляет actions в стор — редьюсер их обработает и обновит состояние.
-
-```jsx
-import { useDispatch } from "react-redux";
-import { toggleTodo } from "../redux/actions";
-
+const { todos } = useSelector((state) => state.todo);
+const { posts, loading, error } = useSelector((state) => state.posts);
 const dispatch = useDispatch();
 
-<button onClick={() => dispatch(toggleTodo(todo.id))}>…</button>
+<button onClick={() => dispatch(fetchPosts())}>Загрузить данные</button>
 ```
 
-`dispatch(addTodo("Новая задача"))` создаёт action `{ type: "ADD_TODO", payload: { text: "Новая задача" } }`, редьюсер его ловит и добавляет в `state.todos`.
+## Табы
 
-## Мини-пример целиком
+Оба приложения рендерятся в `App.jsx`, но по очереди:
 
 ```jsx
-import { useDispatch, useSelector } from "react-redux";
-import { addTodo, toggleTodo } from "./redux/actions";
+const [tab, setTab] = useState("todos");
 
-export default function App() {
-  const { todos } = useSelector((state) => state);
-  const dispatch = useDispatch();
+<div className="tabs">
+  <button className={tab === "todos" ? "tab active" : "tab"} onClick={() => setTab("todos")}>Задачи</button>
+  <button className={tab === "posts" ? "tab active" : "tab"} onClick={() => setTab("posts")}>Posts</button>
+</div>
 
-  return (
-    <div>
-      <button onClick={() => dispatch(addTodo("Новая задача"))}>
-        Добавить
-      </button>
-
-      <ul>
-        {todos.map((t) => (
-          <li
-            key={t.id}
-            onClick={() => dispatch(toggleTodo(t.id))}
-            style={{ textDecoration: t.done ? "line-through" : "none" }}
-          >
-            {t.text}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+{tab === "todos" && <TodoApp />}
+{tab === "posts" && <PostsApp />}
 ```
+
+Активный таб хранится в локальном `useState`, потому что это UI-состояние, а не данные приложения.
+
+## Зачем нужен middleware
+
+Middleware — это слой между `dispatch` и редьюсером. Каждый action проходит через цепочку middleware, и каждый из них может:
+
+- посмотреть на action,
+- изменить или отменить его,
+- выполнить сайд-эффект (логирование, запрос, аналитика),
+- передать дальше через `next(action)`.
+
+Так в Redux появляется место для побочных эффектов, которых не должно быть в редьюсере.
+
+## Почему side effects не пишут прямо в reducer
+
+Редьюсер обязан быть **чистой функцией**:
+
+- одинаковый вход → одинаковый выход,
+- никаких мутаций входного `state`,
+- никаких побочных эффектов (`fetch`, `setTimeout`, логгирование, `localStorage`).
+
+Причины:
+
+1. **Предсказуемость.** Redux вызывает редьюсер много раз, включая внутренние проверки, повторные рендеры и time-travel в DevTools. Если внутри `fetch`, запросы полетят десятками.
+2. **Тестируемость.** Чистую функцию легко протестировать: дал стейт и action — проверил результат. С сетью пришлось бы мокать `fetch`.
+3. **DevTools.** Redux DevTools «отматывает» историю, применяя actions заново. Сайд-эффекты при этом сломают приложение.
+4. **Разделение ответственности.** Редьюсер — про то, «как меняется стейт». Сайд-эффекты — задача middleware / thunk / saga.
+
+Именно поэтому запрос живёт в thunk, а в reducer попадают только готовые `SUCCESS` / `FAILURE` с данными или ошибкой в `payload`.

@@ -1,20 +1,38 @@
-import { useTodoStore } from "./flux/useStore";
-import TodoForm from "./components/TodoForm";
-import TodoList from "./components/TodoList";
-import TodoStats from "./components/TodoStats";
-import { useSelector } from "react-redux";
+import { useState } from "react";
+import TodoApp from "./components/TodoApp";
+import PostsApp from "./components/PostsApp";
+
+const TABS = {
+	TODOS: "todos",
+	POSTS: "posts",
+};
 
 export default function App() {
-	const { todos } = useSelector((store) => store);
+	const [tab, setTab] = useState(TABS.TODOS);
 
 	return (
 		<div className="app">
-			<h1>Redux Todo</h1>
-			<TodoForm />
-			<TodoStats todos={todos} />
-			<TodoList todos={todos} />
+			<h1>react-hw-24</h1>
 
-			<pre className="state-view">{JSON.stringify(todos, null, 2)}</pre>
+			<div className="tabs">
+				<button
+					className={tab === TABS.TODOS ? "tab active" : "tab"}
+					onClick={() => setTab(TABS.TODOS)}
+				>
+					Задачи
+				</button>
+				<button
+					className={tab === TABS.POSTS ? "tab active" : "tab"}
+					onClick={() => setTab(TABS.POSTS)}
+				>
+					Posts
+				</button>
+			</div>
+
+			<div className="tab-content">
+				{tab === TABS.TODOS && <TodoApp />}
+				{tab === TABS.POSTS && <PostsApp />}
+			</div>
 		</div>
 	);
 }

@@ -85,3 +85,42 @@ h1 {
 	font-weight: bold;
 	background: #ddd;
 }
+.app {
+	max-width: 720px;
+	margin: 24px auto;
+	font-family: sans-serif;
+}
+.controls {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 16px;
+}
+button {
+	padding: 6px 12px;
+	cursor: pointer;
+}
+button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.status {
+	padding: 8px 12px;
+	border-radius: 6px;
+	background: #eef;
+}
+.status.error {
+	background: #ffe5e5;
+	color: #a00;
+}
+.posts {
+	list-style: none;
+	padding: 0;
+}
+.posts li {
+	border-bottom: 1px solid #eee;
+	padding: 12px 0;
+}
+.posts strong {
+	display: block;
+	margin-bottom: 4px;
+}
