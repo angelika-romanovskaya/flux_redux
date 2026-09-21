@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { addTodo } from "../flux/actions";
+import { addTodo } from "../redux-toolkit/todo/todo-slice";
 import { useDispatch } from "react-redux";
 
 export default function TodoForm() {

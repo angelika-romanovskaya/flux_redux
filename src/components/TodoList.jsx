@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useDispatch } from "react-redux";
-import { toggleTodo, removeTodo } from "../flux/actions";
+import { useDispatch, useSelector } from "react-redux";
+import { setFilter } from "../redux-toolkit/todo/filter-slice";
+import { toggleTodo, removeTodo } from "../redux-toolkit/todo/todo-slice";
 
 const FILTERS = {
 	ALL: "all",
@@ -10,7 +10,7 @@ const FILTERS = {
 
 export default function TodoList({ todos }) {
 	const dispatch = useDispatch();
-	const [filter, setFilter] = useState(FILTERS.ALL);
+	const { filter } = useSelector((state) => state);
 
 	const visibleTodos = todos.filter((todo) => {
 		if (filter === FILTERS.ACTIVE) return !todo.done;
@@ -23,19 +23,19 @@ export default function TodoList({ todos }) {
 			<div className="filters">
 				<button
 					className={filter === FILTERS.ALL ? "active" : ""}
-					onClick={() => setFilter(FILTERS.ALL)}
+					onClick={() => dispatch(setFilter(FILTERS.ALL))}
 				>
 					Все
 				</button>
 				<button
 					className={filter === FILTERS.ACTIVE ? "active" : ""}
-					onClick={() => setFilter(FILTERS.ACTIVE)}
+					onClick={() => dispatch(setFilter(FILTERS.ACTIVE))}
 				>
 					Активные
 				</button>
 				<button
 					className={filter === FILTERS.DONE ? "active" : ""}
-					onClick={() => setFilter(FILTERS.DONE)}
+					onClick={() => dispatch(setFilter(FILTERS.DONE))}
 				>
 					Выполненные
 				</button>

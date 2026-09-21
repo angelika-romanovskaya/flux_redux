@@ -1,5 +1,5 @@
-import { reset } from "../flux/actions";
 import { useDispatch } from "react-redux";
+import { clearCompleted } from "../redux-toolkit/todo/todo-slice";
 
 export default function TodoStats({ todos }) {
 	const total = todos.length;
@@ -13,7 +13,9 @@ export default function TodoStats({ todos }) {
 				Всего: <b>{total}</b> · Активные: <b>{active}</b> · Выполнено:{" "}
 				<b>{done}</b>
 			</span>
-			<button onClick={() => dispatch(reset())}>Сбросить всё</button>
+			<button onClick={() => dispatch(clearCompleted())}>
+				Очистить выполненные
+			</button>
 		</div>
 	);
 }

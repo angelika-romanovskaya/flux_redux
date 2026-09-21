@@ -4,7 +4,7 @@ import TodoList from "./TodoList";
 import TodoStats from "./TodoStats";
 
 export default function TodoApp() {
-	const { todos } = useSelector((state) => state.todo);
+	const { todos } = useSelector((state) => state);
 
 	return (
 		<div className="app-section">

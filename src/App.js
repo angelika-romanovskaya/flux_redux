@@ -12,7 +12,7 @@ export default function App() {
 
 	return (
 		<div className="app">
-			<h1>react-hw-24</h1>
+			<h1>react-hw</h1>
 
 			<div className="tabs">
 				<button

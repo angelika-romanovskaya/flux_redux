@@ -1,12 +1,17 @@
 import { useDispatch, useSelector } from "react-redux";
-import { clearPosts, fetchPosts } from "../redux/posts/actions";
+import {
+	clearPosts,
+	selectError,
+	selectLoading,
+	selectPosts,
+} from "../redux-toolkit/posts/posts-slice";
 
 export default function PostsApp() {
-	const { posts, loading, error } = useSelector((state) => state.posts);
+	const posts = useSelector(selectPosts);
+	const loading = useSelector(selectLoading);
+	const error = useSelector(selectError);
 	const dispatch = useDispatch();
 
-	const handleLoad = () => dispatch(fetchPosts());
-	const handleRetry = () => dispatch(fetchPosts());
 	const handleClear = () => dispatch(clearPosts());
 
 	return (
@@ -14,7 +19,7 @@ export default function PostsApp() {
 			<h2>Posts</h2>
 
 			<div className="controls">
-				<button onClick={handleLoad} disabled={loading}>
+				<button onClick={() => {}} disabled={loading}>
 					Загрузить данные
 				</button>
 				{posts.length > 0 && (
@@ -29,7 +34,7 @@ export default function PostsApp() {
 			{error && !loading && (
 				<div className="status error">
 					<p>Ошибка: {error}</p>
-					<button onClick={handleRetry}>Повторить запрос</button>
+					<button onClick={() => {}}>Повторить запрос</button>
 				</div>
 			)}
 
