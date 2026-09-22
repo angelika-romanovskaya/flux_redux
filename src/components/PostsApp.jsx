@@ -1,6 +1,7 @@
 import { useDispatch, useSelector } from "react-redux";
 import {
 	clearPosts,
+	fetchPosts,
 	selectError,
 	selectLoading,
 	selectPosts,
@@ -13,13 +14,14 @@ export default function PostsApp() {
 	const dispatch = useDispatch();
 
 	const handleClear = () => dispatch(clearPosts());
+	const handleFetch = () => dispatch(fetchPosts());
 
 	return (
 		<div className="app-section">
 			<h2>Posts</h2>
 
 			<div className="controls">
-				<button onClick={() => {}} disabled={loading}>
+				<button onClick={handleFetch} disabled={loading}>
 					Загрузить данные
 				</button>
 				{posts.length > 0 && (
@@ -34,7 +36,7 @@ export default function PostsApp() {
 			{error && !loading && (
 				<div className="status error">
 					<p>Ошибка: {error}</p>
-					<button onClick={() => {}}>Повторить запрос</button>
+					<button onClick={handleFetch}>Повторить запрос</button>
 				</div>
 			)}
 
