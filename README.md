@@ -1,246 +1,204 @@
-# react-hw-22 (Redux Toolkit)
+# CRUD на RTK Query (JavaScript)
 
-То же приложение, что и в версии с классическим Redux, но переписанное
-на Redux Toolkit. Цель — посмотреть, сколько кода реально уходит, если не
-писать руками то, что Toolkit уже умеет.
+## Структура API slice
 
-## Сравнение: классический Redux vs Redux Toolkit
+`createApi` — это фабрика RTK Query. Она создаёт всё, что нужно для работы с HTTP: reducer для кэша, middleware для управления запросами и автогенерируемые хуки для каждого endpoint.
 
-| Что                       | Классический Redux                                                                 | Redux Toolkit                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Установка                 | `redux` + `react-redux` + `redux-thunk` + `redux-devtools-extension`               | `@reduxjs/toolkit` + `react-redux`                                                  |
-| Типы экшенов              | Строковые константы: `const ADD_TODO = "ADD_TODO"`                                 | Генерируются автоматически из `name` + ключей `reducers`                            |
-| Action creators           | Отдельные функции: `const addTodo = (text) => ({ type: ADD_TODO, payload: text })` | Генерируются вместе со слайсом, экспортируются из `todosSlice.actions`              |
-| Reducer                   | `switch (action.type) { case ADD_TODO: return { ...state, todos: [...] } }`        | Объект с методами: `addTodo(state, action) { ... }`                                 |
-| Иммутабельность           | Руками через спреды, либо Immer отдельно                                           | Immer встроен — можно писать `state.push(...)` и `todo.completed = !todo.completed` |
-| Комбинирование редьюсеров | `combineReducers({ todos, filter })` вручную                                       | Просто объект `reducer: { todos, filter }` в `configureStore`                       |
-| Thunk-мидлвара            | Подключается вручную                                                               | Уже включена                                                                        |
-| DevTools                  | Требует `composeWithDevTools` или `window.__REDUX_DEVTOOLS_EXTENSION__`            | Уже включены                                                                        |
-| Настройка store           | `createStore` + `applyMiddleware` + `compose`                                      | Один `configureStore({ reducer: {...} })`                                           |
-
-## Что делает configureStore
-
-`configureStore` — обёртка над `createStore`, которая собирает
-рабочий store «из коробки»:
-
-- принимает объект `reducer` и сам вызывает `combineReducers`;
-- добавляет `redux-thunk` в middleware;
-- включает Redux DevTools без дополнительных обёрток;
-- в dev-режиме включает проверки: «не мутирует ли редьюсер state» и
-  «сериализуемы ли экшены и state»;
-- возвращает уже готовый store — с ним сразу можно работать.
-
-Строк кода на настройку store: **1 файл, 8 строк** вместо классических ~30.
-
-## Что делает createSlice
-
-`createSlice` — фабрика, которая по одному объекту создаёт сразу три вещи:
-
-1. **Action creators** — из имени `name` и названий ключей в `reducers`.
-   Например, ключ `addTodo` в слайсе `todos` → экшен `"todos/addTodo"` и
-   функция `addTodo(payload)`.
-2. **Reducer** — сам собирает обработчик `switch` из тех же ключей.
-3. **Action types** — строки вроде `"todos/addTodo"` тоже генерируются,
-   руками их писать не надо.
-
-Плюс `prepare` внутри экшена позволяет задать форму payload — например,
-`addTodo(text)` под капотом превращается в `{ id, text, completed }` с
-автоматическим `nanoid()`.
-
-## Жизненный цикл createAsyncThunk
-
-Любая асинхронная операция (запрос на сервер, чтение с диска, что угодно,
-что не выполняется синхронно) в RTK оформляется через `createAsyncThunk`.
-Это фабрика, которая принимает два аргумента:
+`src/rtk-query/apiSlice.js`:
 
 ```js
-export const fetchPosts = createAsyncThunk(
-  "posts/fetchPosts",                 // имя — попадёт в типы экшенов
-  async (arg, thunkApi) => { ... }    // сама работа: вернёт значение → payload
-);
-```
+import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-Что происходит, когда ты где-то пишешь `dispatch(fetchPosts())`:
+export const apiSlice = createApi({
+	reducerPath: "api", // ключ ветки в store
+	baseQuery: fetchBaseQuery({
+		baseUrl: "https://jsonplaceholder.typicode.com", // базовый клиент
+	}),
+	tagTypes: ["Items"], // объявление типов тегов
+	endpoints: (builder) => ({
+		// READ (список)
+		getItems: builder.query({
+			query: () => "/posts",
+			providesTags: (result) =>
+				result
+					? [
+							...result.map(({ id }) => ({ type: "Items", id })),
+							{ type: "Items", id: "LIST" },
+						]
+					: [{ type: "Items", id: "LIST" }],
+		}),
 
-1. Thunk запускает твой `async`-колбэк.
-2. **Сразу** диспатчит экшен `posts/fetchPosts/pending`.
-3. Ждёт, пока колбэк отработает.
-4. Если колбэк вернул значение — диспатчит `posts/fetchPosts/fulfilled`,
-   и это значение кладётся в `action.payload`.
-5. Если колбэк бросил исключение — диспатчит `posts/fetchPosts/rejected`,
-   и ошибка кладётся в `action.error`. Если внутри был вызван
-   `thunkApi.rejectWithValue(...)` — то значение попадёт в `action.payload`.
+		// READ (один)
+		getItemById: builder.query({
+			query: (id) => `/posts/${id}`,
+			providesTags: (result, error, id) => [{ type: "Items", id }],
+		}),
 
-То есть вместо ручного диспатча трёх экшенов (`REQUEST`, `SUCCESS`, `FAILURE`)
-ты пишешь одну асинхронную функцию, а Toolkit сам раздаёт эти три экшена
-в нужные моменты.
+		// CREATE
+		createItem: builder.mutation({
+			query: (newItem) => ({
+				url: "/posts",
+				method: "POST",
+				body: newItem,
+			}),
+			invalidatesTags: [{ type: "Items", id: "LIST" }],
+		}),
 
-## Что такое pending, fulfilled, rejected
+		// UPDATE
+		updateItem: builder.mutation({
+			query: ({ id, ...patch }) => ({
+				url: `/posts/${id}`,
+				method: "PUT",
+				body: patch,
+			}),
+			invalidatesTags: (result, error, { id }) => [
+				{ type: "Items", id },
+				{ type: "Items", id: "LIST" },
+			],
+		}),
 
-Это три фазы одной асинхронной операции. Названия стандартные для промисов,
-и RTK просто использует ту же терминологию.
-
-**`pending`** — «запрос начался». Экшен уходит сразу, синхронно, до первого
-`await`. В этот момент принято ставить `loading: true` и сбрасывать `error`.
-
-**`fulfilled`** — «успешно завершилось». Экшен уходит, когда твой
-`async`-колбэк вернул значение. В `action.payload` лежит то, что вернулось.
-Тут `loading: false` и, как правило, запись данных в стор.
-
-**`rejected`** — «упало». Экшен уходит, если из колбэка полетело исключение
-или был вызван `rejectWithValue`. Ошибку достаём из `action.payload`
-(если использовали `rejectWithValue`) или из `action.error.message`.
-
-Имена экшенов собираются из имени thunk'а:
-
-```
-posts/fetchPosts/pending
-posts/fetchPosts/fulfilled
-posts/fetchPosts/rejected
-```
-
-## Пример extraReducers
-
-`reducers` — для синхронных экшенов, которые ты пишешь сам.
-`extraReducers` — для тех, что создал кто-то другой: thunk'и, экшены из
-других слайсов. Обычно именно здесь живут `pending / fulfilled / rejected`.
-
-```js
-import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
-
-const initialState = {
-  posts: [],
-  loading: false,
-  error: null,
-};
-
-export const fetchPosts = createAsyncThunk(
-  "posts/fetchPosts",
-  async (_, thunkApi) => {
-    try {
-      const response = await fetch(
-        "https://jsonplaceholder.typicode.com/posts?_limit=10"
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      return thunkApi.rejectWithValue(
-        error.message || "Не удалось загрузить данные"
-      );
-    }
-  }
-);
-
-const postsSlice = createSlice({
-  name: "posts",
-  initialState,
-  reducers: {
-    clearPosts(state) {
-      state.posts = [];
-    },
-  },
-  extraReducers: (builder) => {
-    builder
-      .addCase(fetchPosts.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(fetchPosts.fulfilled, (state, action) => {
-        state.loading = false;
-        state.error = null;
-        state.posts = action.payload;
-      })
-      .addCase(fetchPosts.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload ?? action.error.message;
-      });
-  },
+		// DELETE
+		deleteItem: builder.mutation({
+			query: (id) => ({
+				url: `/posts/${id}`,
+				method: "DELETE",
+			}),
+			invalidatesTags: (result, error, id) => [
+				{ type: "Items", id },
+				{ type: "Items", id: "LIST" },
+			],
+		}),
+	}),
 });
 
-export const { clearPosts } = postsSlice.actions;
-export default postsSlice.reducer;
+export const {
+	useGetItemsQuery,
+	useGetItemByIdQuery,
+	useCreateItemMutation,
+	useUpdateItemMutation,
+	useDeleteItemMutation,
+} = apiSlice;
 ```
 
-Несколько замечаний по коду:
+### Из чего состоит API slice
 
-- `addCase` привязан к **конкретному** thunk'у. Если в проекте несколько
-  thunk'ов, каждый обрабатывается своим набором `addCase` — экшены не
-  перемешаются.
-- Мутации вида `state.loading = true` работают, потому что под капотом Immer.
-  Писать `{ ...state, loading: true }` не нужно.
-- `addMatcher` нужен только для «широких» условий вроде «любой pending в
-  приложении». Для одного thunk'а `addCase` понятнее и безопаснее.
+| Поле                                    | Назначение                                                                                                        |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `reducerPath`                           | Имя ветки в Redux store. Используется как ключ: `[apiSlice.reducerPath]: apiSlice.reducer`                        |
+| `baseQuery`                             | Базовый HTTP-клиент. Чаще всего `fetchBaseQuery`, но может быть кастомная функция с авторизацией, ретраями и т.п. |
+| `tagTypes`                              | Массив типов тегов, которыми будут помечаться данные (для инвалидации кэша)                                       |
+| `endpoints`                             | Функция `builder => ({ ... })`. Внутри объявляются все query и mutation                                           |
+| `builder.query`                         | Для чтения (GET). Автогенерирует `useXxxQuery`                                                                    |
+| `builder.mutation`                      | Для записи (POST / PUT / PATCH / DELETE). Автогенерирует `useXxxMutation`                                         |
+| `keepUnusedDataFor`                     | (опц.) Время жизни кэша неиспользуемых данных в секундах, по умолчанию `60`                                       |
+| `refetchOnFocus` / `refetchOnReconnect` | (опц.) Автоматический рефетч при фокусе окна / восстановлении связи                                               |
 
-## Почему это удобнее ручных thunk actions
-
-В классическом Redux на каждый запрос приходилось писать:
-
-- три константы (`REQUEST`, `SUCCESS`, `FAILURE`);
-- три action creator'а;
-- сам thunk, который вручную диспатчил эти три экшена;
-- три `case` в редьюсере;
-- `try/catch` внутри thunk'а, чтобы не забыть `FAILURE`.
-
-Итого — около 60–70 строк на один запрос. Плюс легко ошибиться: забыть
-`REQUEST`, перепутать тип, не передать `payload`.
-
-С `createAsyncThunk` всё это делает Toolkit:
-
-- типы экшенов генерируются автоматически, опечатка невозможна;
-- три фазы (`pending`/`fulfilled`/`rejected`) диспатчатся сами;
-- `rejectWithValue` даёт осмысленный payload ошибки;
-- `extraReducers.addCase(...)` явно связывает обработку с конкретным
-  thunk'ом — не надо угадывать строку типа экшена;
-- в Redux DevTools сразу видно три экшена с общим префиксом — легко
-  отфильтровать все запросы одного типа.
-
-Тот же posts-thunk на классическом Redux занимал бы ~60 строк плюс
-изменения в редьюсере. В RTK — примерно 30, и всё в одном файле рядом.
-
-## Сколько кода удалось убрать
-
-Примерно так:
-
-| Файл               | Классический Redux                                  | Redux Toolkit             |
-| ------------------ | --------------------------------------------------- | ------------------------- |
-| `actionTypes.js`   | ~10 строк                                           | — (генерируется)          |
-| `actions.js`       | ~25 строк                                           | — (генерируется)          |
-| `todosReducer.js`  | ~50 строк (switch на 4 case)                        | ~25 строк (todosSlice)    |
-| `postsReducer.js`  | ~70 строк (switch + 3 фазы запроса)                 | ~30 строк (postsSlice)    |
-| `filterReducer.js` | ~15 строк                                           | ~10 строк (filterSlice)   |
-| `store.js`         | ~20 строк (createStore + applyMiddleware + compose) | ~8 строк (configureStore) |
-| `index.js`         | +обёртки для DevTools                               | `Provider` как есть       |
-| Итого              | **~190 строк**                                      | **~75 строк**             |
-
-Итого примерно **100–120 строк служебного кода удаляется**, а если считать
-вместе с ручными спредами для иммутабельности — экономия ещё больше.
-
-## Функционал
-
-Todo-часть:
-
-- добавление задачи (`addTodo`);
-- удаление (`removeTodo`);
-- переключение `completed` (`toggleTodo`);
-- очистка выполненных (`clearCompleted`);
-- фильтр `all / active / completed` (`setFilter` в отдельном слайсе).
-
-Posts-часть:
-
-- загрузка постов через `createAsyncThunk` (`fetchPosts`);
-- индикатор загрузки (`loading`);
-- обработка ошибок (`error`);
-- очистка списка (`clearPosts`).
-
-## Запуск
+### Что создаёт `createApi`
 
 ```
-npm install
-npm start
+apiSlice
+├── .reducer           → для configureStore
+├── .middleware        → для configureStore (обязательно!)
+├── .reducerPath       → строка 'api'
+├── .util              → утилиты (resetApiState, updateQueryData, prefetch, …)
+└── автогенерируемые хуки:
+    ├── useGetItemsQuery
+    ├── useGetItemByIdQuery
+    ├── useCreateItemMutation
+    ├── useUpdateItemMutation
+    └── useDeleteItemMutation
 ```
 
-Порт 3000.
+### Правило именования хуков
+
+- `getItems` → `useGetItemsQuery`
+- `getItemById` → `useGetItemByIdQuery`
+- `createItem` → `useCreateItemMutation`
+- `updateItem` → `useUpdateItemMutation`
+- `deleteItem` → `useDeleteItemMutation`
+
+Если endpoint называется `someAction`, хук будет `useSomeActionQuery` (для query) или `useSomeActionMutation` (для mutation).
+
+---
+
+## Список endpoints
+
+| Endpoint      | Тип      | HTTP     | URL          | providesTags / invalidatesTags          |
+| ------------- | -------- | -------- | ------------ | --------------------------------------- |
+| `getItems`    | query    | `GET`    | `/posts`     | provides: `Items:LIST`, `Items:<id>`    |
+| `getItemById` | query    | `GET`    | `/posts/:id` | provides: `Items:<id>`                  |
+| `createItem`  | mutation | `POST`   | `/posts`     | invalidates: `Items:LIST`               |
+| `updateItem`  | mutation | `PUT`    | `/posts/:id` | invalidates: `Items:<id>`, `Items:LIST` |
+| `deleteItem`  | mutation | `DELETE` | `/posts/:id` | invalidates: `Items:<id>`, `Items:LIST` |
+
+---
+
+## Правила
+
+1. **`providesTags`** указывается в query-эндпоинтах. Он сообщает RTK Query: «данные этого запроса помечены такими-то тегами».
+2. **`invalidatesTags`** указывается в mutation-эндпоинтах. Он сообщает: «после успешного выполнения этого запроса перечисленные теги устарели».
+3. RTK Query находит все **активные query**, чьи `providesTags` пересекаются с `invalidatesTags`, и **автоматически перезапрашивает** их.
+4. Тег может быть:
+   - строкой — `'Items'` (инвалидирует всё, что помечено `Items`);
+   - объектом — `{ type: 'Items', id: 5 }` (точечно, конкретный элемент);
+   - объектом с `id: 'LIST'` — тег для списка целиком.
+
+### Что происходит в этом проекте
+
+| Действие   | Инвалидирует                | Что перезапрашивается                                          |
+| ---------- | --------------------------- | -------------------------------------------------------------- |
+| Создание   | `Items:LIST`                | `useGetItemsQuery()`                                           |
+| Обновление | `Items:<id>` + `Items:LIST` | `useGetItemsQuery()` + `useGetItemByIdQuery(id)`               |
+| Удаление   | `Items:<id>` + `Items:LIST` | `useGetItemsQuery()` + (если открыт) `useGetItemByIdQuery(id)` |
+
+Именно поэтому UI-список **обновляется сам** после любой мутации — это следствие связки `providesTags` ↔ `invalidatesTags`, а не ручной вызов `refetch()`.
+
+### Соглашение об именах тегов
+
+- `'Items'` в `tagTypes` — тип сущности.
+- `{ type: 'Items', id: 'LIST' }` — тег «весь список».
+- `{ type: 'Items', id: <number> }` — тег «конкретный элемент».
+
+Если сущностей несколько (например, `Post`, `User`, `Comment`) — объявляйте отдельные `tagTypes` и не смешивайте их.
+
+### Почему `providesTags` для списка — функция, а не константа
+
+```js
+// ❌ Так тоже можно, но тогда не будет точечной инвалидации
+providesTags: ['Items'],
+
+// ✅ Так лучше: список помечается и общим тегом LIST, и тегом на каждый id
+providesTags: (result) =>
+  result
+    ? [
+        ...result.map(({ id }) => ({ type: 'Items', id })),
+        { type: 'Items', id: 'LIST' },
+      ]
+    : [{ type: 'Items', id: 'LIST' }],
+```
+
+Это позволяет при обновлении одного элемента перезапросить именно его, а не тянуть заново весь список с сервера.
+
+---
+
+## Чем RTK Query отличается от createAsyncThunk
+
+| Критерий                           | `createAsyncThunk`                                                                                                | RTK Query                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Назначение                         | Универсальные асинхронные операции                                                                                | HTTP data-fetching                                                    |
+| Объявление запроса                 | Вручную: `createAsyncThunk` + `fetch`/`axios`                                                                     | Декларативно: `builder.query` / `builder.mutation`                    |
+| Состояние загрузки                 | Пишете в slice сами: `pending / fulfilled / rejected`                                                             | Готовые флаги: `isLoading`, `isFetching`, `isError`, `error`, `data`  |
+| Кэш                                | Нет — храните где хотите                                                                                          | Нормализованный кэш с TTL (`keepUnusedDataFor`)                       |
+| Дедупликация запросов              | Нет                                                                                                               | Автоматическая                                                        |
+| Инвалидация                        | Нет                                                                                                               | Через `providesTags` / `invalidatesTags`                              |
+| Хуки                               | Пишете сами через `useDispatch` / `useSelector`                                                                   | Автогенерация: `useGetItemsQuery`, `useCreateItemMutation`, …         |
+| Поллинг                            | Вручную                                                                                                           | `pollingInterval`                                                     |
+| Рефетч при фокусе окна / reconnect | Вручную                                                                                                           | `refetchOnFocus`, `refetchOnReconnect`                                |
+| Оптимистичные апдейты              | Вручную                                                                                                           | `onQueryStarted` + `api.util.updateQueryData`                         |
+| Boilerplate                        | Много                                                                                                             | Минимум                                                               |
+| Где выбирать                       | Сложная асинхронная логика, не связанная с HTTP: websockets, отложенные сценарии, оркестрация нескольких действий | CRUD, REST, списки, детальные страницы, любые однотипные HTTP-запросы |
+
+### Когда что использовать
+
+- **RTK Query** — 90% случаев: любой CRUD, списки, детальные страницы, справочники, автокомплиты.
+- **`createAsyncThunk`** — когда запрос является лишь шагом в сложной логике: последовательные цепочки, запросы, зависящие от многих условий, работа с WebSocket / SSE, файловые операции с прогрессом.
