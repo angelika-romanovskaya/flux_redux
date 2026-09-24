@@ -33,7 +33,13 @@ const postsSlice = createSlice({
 	reducers: {
 		clearPosts(state) {
 			state.posts = [];
+			state.error = null;
 		},
+	},
+	selectors: {
+		selectPosts: (state) => state.posts,
+		selectLoading: (state) => state.loading,
+		selectError: (state) => state.error,
 	},
 	extraReducers: (builder) => {
 		builder
@@ -63,8 +69,6 @@ const postsSlice = createSlice({
 });
 
 export const { clearPosts } = postsSlice.actions;
+export const { selectPosts, selectLoading, selectError, selectPostsCount } =
+	postsSlice.selectors;
 export default postsSlice.reducer;
-
-export const selectPosts = (state) => state.posts.posts;
-export const selectLoading = (state) => state.posts.loading;
-export const selectError = (state) => state.posts.error;

@@ -1,16 +1,10 @@
 import { useDispatch, useSelector } from "react-redux";
-import {
-	clearPosts,
-	fetchPosts,
-	selectError,
-	selectLoading,
-	selectPosts,
-} from "../redux-toolkit/posts/posts-slice";
+import { clearPosts, fetchPosts } from "../redux-toolkit/posts/posts-slice";
+import { selectPostsState } from "../redux-toolkit/posts/create-selector";
 
 export default function PostsApp() {
-	const posts = useSelector(selectPosts);
-	const loading = useSelector(selectLoading);
-	const error = useSelector(selectError);
+	const { posts, loading, error, isEmpty, hasError, showList } =
+		useSelector(selectPostsState);
 	const dispatch = useDispatch();
 
 	const handleClear = () => dispatch(clearPosts());
@@ -24,7 +18,7 @@ export default function PostsApp() {
 				<button onClick={handleFetch} disabled={loading}>
 					Загрузить данные
 				</button>
-				{posts.length > 0 && (
+				{!isEmpty && (
 					<button onClick={handleClear} disabled={loading}>
 						Очистить
 					</button>
@@ -33,14 +27,14 @@ export default function PostsApp() {
 
 			{loading && <p className="status">Загрузка…</p>}
 
-			{error && !loading && (
+			{hasError && (
 				<div className="status error">
 					<p>Ошибка: {error}</p>
 					<button onClick={handleFetch}>Повторить запрос</button>
 				</div>
 			)}
 
-			{!loading && !error && posts.length > 0 && (
+			{showList && (
 				<ul className="posts">
 					{posts.map((post) => (
 						<li key={post.id}>
